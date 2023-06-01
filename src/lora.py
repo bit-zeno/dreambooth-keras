@@ -9,7 +9,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
     def __init__(
         self, original_layer, input_layer, bias=False, r=16, dropout_p=0.1, scale=1.0
     ):
-        super().__init__(name="lora")
+        super().__init__(name=f"{original_layer.name}_lora")
 
         self.linear = original_layer
         self.linear.trainable = False
@@ -58,7 +58,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         dropout_p: float = 0.1,
         scale: float = 1.0,
     ):
-        super().__init__(name="lora")
+        super().__init__(name=f"{original_layer.name}_lora")
 
         self.conv = original_layer
         self.conv.trainable = False
