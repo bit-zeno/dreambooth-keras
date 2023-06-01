@@ -121,6 +121,49 @@ class LoRADiffusionModel(keras.Model):
             )
             self.load_weights(diffusion_model_weights_fpath)
 
+    def import_weights(self, diffusion_model):
+        for i in range(0, 66):
+            lora_l = self.layers[i]
+            ori_l = diffusion_model.layers[i]
+            lora_w = lora_l.get_weights()
+            ori_w = ori_l.get_weights()
+            if (
+                lora_l.name.find("res_block") == -1
+                and lora_l.name.find("spatial_transformer") == -1
+            ):
+                lora_w[-len(ori_w) :] = ori_w
+                self.layers[i].set_weights(lora_w)
+
+            elif lora_l.name.find("res_block") != -1:
+                if len(lora_w) == 16:
+                    lora_w[0:2] = ori_w[0:2]
+                    lora_w[6:8] = ori_w[6:8]
+                    lora_w[10:12] = ori_w[2:4]
+                    lora_w[12:14] = ori_w[4:6]
+                    lora_w[14:16] = ori_w[8:10]
+                elif len(lora_w) == 20:
+                    lora_w[0:2] = ori_w[0:2]
+                    lora_w[6:8] = ori_w[6:8]
+                    lora_w[12:14] = ori_w[2:4]
+                    lora_w[14:16] = ori_w[4:6]
+                    lora_w[16:20] = ori_w[8:12]
+                else:
+                    raise "Error importing weights"
+                self.layers[i].set_weights(lora_w)
+
+            elif lora_l.name.find("spatial_transformer") != -1:
+                lora_w[0:2] = ori_w[0:2]
+                lora_w[4:6] = ori_w[4:6]
+                lora_w[14:16] = ori_w[11:13]
+                lora_w[24:26] = ori_w[18:20]
+                lora_w[32:34] = ori_w[2:4]
+                lora_w[34:39] = ori_w[6:11]
+                lora_w[39:44] = ori_w[13:18]
+                lora_w[44:50] = ori_w[20:26]
+                self.layers[i].set_weights(lora_w)
+            else:
+                raise "Error importing weights"
+
 
 class ResBlock(keras.layers.Layer):
     def __init__(self, output_dim, **kwargs):
