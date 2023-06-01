@@ -1,15 +1,21 @@
 import tensorflow as tf
 from tensorflow import keras
-import tensorflow.experimental.numpy as tnp
 
 from layers import PaddedConv2D
 
 
 class LoraInjectedLinearWrapper(keras.layers.Layer):
     def __init__(
-        self, original_layer, input_layer, bias=False, r=16, dropout_p=0.1, scale=1.0
+        self,
+        original_layer,
+        input_layer,
+        bias=False,
+        r=16,
+        dropout_p=0.1,
+        scale=1.0,
+        **kwargs,
     ):
-        super().__init__(name=f"{original_layer.name}_lora")
+        super().__init__(name=f"{original_layer.name}_lora", **kwargs)
 
         self.linear = original_layer
         self.linear.trainable = False
@@ -31,11 +37,9 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self.scale = scale
         self.selector = tf.identity
 
-        tf_rand = self.get_tf_rand(input_dim)
-        self(tf_rand)
-
-    def get_tf_rand(self, input_shape):
-        return tnp.random.rand(1, input_shape)
+    def build(self, input_shape):
+        self.lora_down.build(input_shape)
+        self.lora_up.build(self.r)
 
     def call(self, inputs):
         x = self.lora_down(inputs)
@@ -57,8 +61,9 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         r: int = 4,
         dropout_p: float = 0.1,
         scale: float = 1.0,
+        **kwargs,
     ):
-        super().__init__(name=f"{original_layer.name}_lora")
+        super().__init__(name=f"{original_layer.name}_lora", **kwargs)
 
         self.conv = original_layer
         self.conv.trainable = False
@@ -93,11 +98,10 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
             input_shape = input_layer.output.shape[1:]
         else:
             input_shape = input_layer.shape[1:]
-        tf_rand = self.get_tf_rand(input_shape)
-        self(tf_rand)
 
-    def get_tf_rand(self, input_shape):
-        return tnp.random.rand(1, *input_shape)
+    def build(self, input_shape):
+        self.lora_down.build(input_shape)
+        self.lora_up.build((self.r, 1, 1))
 
     def call(self, inputs):
         x = self.lora_down(inputs)
