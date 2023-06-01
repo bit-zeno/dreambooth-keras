@@ -33,11 +33,9 @@ class LoRADiffusionModel(keras.Model):
         t_embed_input = keras.layers.Input((320,))
         latent = keras.layers.Input((img_height // 8, img_width // 8, 4))
 
-        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280), t_embed_input)(
-            t_embed_input
-        )
+        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280))(t_embed_input)
         t_emb = keras.layers.Activation("swish")(t_emb)
-        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280), t_emb)(t_emb)
+        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280))(t_emb)
 
         # Downsampling flow
 
@@ -131,10 +129,11 @@ class ResBlock(keras.layers.Layer):
         self.entry_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
+            LoraInjectedConv2DWrapper(PaddedConv2D(self.output_dim, 3, padding=1)),
         ]
         self.embedding_flow = [
             keras.layers.Activation("swish"),
-            lambda x: LoraInjectedLinearWrapper(keras.layers.Dense(output_dim), x),
+            LoraInjectedLinearWrapper(keras.layers.Dense(output_dim)),
         ]
         self.exit_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
@@ -155,12 +154,8 @@ class ResBlock(keras.layers.Layer):
         x = inputs
         for layer in self.entry_flow:
             x = layer(x)
-        x = PaddedConv2D(self.output_dim, 3, padding=1)(x)
-        for i, layer in enumerate(self.embedding_flow):
-            if i == len(self.embedding_flow) - 1:
-                embeddings = layer(embeddings)(embeddings)
-            else:
-                embeddings = layer(embeddings)
+        for layer in self.embedding_flow:
+            embeddings = layer(embeddings)
         x = x + embeddings[:, None, None]
         for layer in self.exit_flow:
             x = layer(x)
@@ -174,8 +169,8 @@ class SpatialTransformer(keras.layers.Layer):
         channels = num_heads * head_size
         self.fully_connected = fully_connected
         if fully_connected:
-            self.proj1 = lambda x: LoraInjectedLinearWrapper(
-                keras.layers.Dense(num_heads * head_size), x
+            self.proj1 = LoraInjectedLinearWrapper(
+                keras.layers.Dense(num_heads * head_size)
             )
         else:
             self.proj1 = LoraInjectedConv2DWrapper(
@@ -183,9 +178,7 @@ class SpatialTransformer(keras.layers.Layer):
             )
         self.transformer_block = BasicTransformerBlock(channels, num_heads, head_size)
         if fully_connected:
-            self.proj2 = lambda x: LoraInjectedLinearWrapper(
-                keras.layers.Dense(channels), x
-            )
+            self.proj2 = LoraInjectedLinearWrapper(keras.layers.Dense(channels))
         else:
             self.proj2 = LoraInjectedConv2DWrapper(PaddedConv2D(channels, 1))
 
@@ -193,17 +186,11 @@ class SpatialTransformer(keras.layers.Layer):
         inputs, context = inputs
         _, h, w, c = inputs.shape
         x = self.norm(inputs)
-        if self.fully_connected:
-            x = self.proj1(x)(x)
-        else:
-            x = self.proj1(x)
+        x = self.proj1(x)
         x = tf.reshape(x, (-1, h * w, c))
         x = self.transformer_block([x, context])
         x = tf.reshape(x, (-1, h, w, c))
-        if self.fully_connected:
-            return self.proj2(x)(x) + inputs
-        else:
-            return self.proj2(x) + inputs
+        return self.proj2(x) + inputs
 
 
 class BasicTransformerBlock(keras.layers.Layer):
@@ -215,43 +202,39 @@ class BasicTransformerBlock(keras.layers.Layer):
         self.attn2 = CrossAttention(num_heads, head_size)
         self.norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.geglu = GEGLU(dim * 4)
-        self.dense = lambda x: LoraInjectedLinearWrapper(keras.layers.Dense(dim), x)
+        self.dense = LoraInjectedLinearWrapper(keras.layers.Dense(dim))
 
     def call(self, inputs):
         inputs, context = inputs
         x = self.attn1([self.norm1(inputs), None]) + inputs
         x = self.attn2([self.norm2(x), context]) + x
         _tmp = self.geglu(self.norm3(x))
-        return self.dense(_tmp)(_tmp) + x
+        return self.dense(_tmp) + x
 
 
 class CrossAttention(keras.layers.Layer):
     def __init__(self, num_heads, head_size, **kwargs):
         super().__init__(**kwargs)
-        self.to_q = lambda x: LoraInjectedLinearWrapper(
-            keras.layers.Dense(num_heads * head_size, use_bias=False), x
+        self.to_q = LoraInjectedLinearWrapper(
+            keras.layers.Dense(num_heads * head_size, use_bias=False)
         )
-        self.to_k = lambda x: LoraInjectedLinearWrapper(
-            keras.layers.Dense(num_heads * head_size, use_bias=False), x
+        self.to_k = LoraInjectedLinearWrapper(
+            keras.layers.Dense(num_heads * head_size, use_bias=False)
         )
-        self.to_v = lambda x: LoraInjectedLinearWrapper(
-            keras.layers.Dense(num_heads * head_size, use_bias=False), x
+        self.to_v = LoraInjectedLinearWrapper(
+            keras.layers.Dense(num_heads * head_size, use_bias=False)
         )
         self.scale = head_size**-0.5
         self.num_heads = num_heads
         self.head_size = head_size
-        self.out_proj = lambda x: LoraInjectedLinearWrapper(
-            keras.layers.Dense(num_heads * head_size), x
+        self.out_proj = LoraInjectedLinearWrapper(
+            keras.layers.Dense(num_heads * head_size)
         )
 
     def call(self, inputs):
         inputs, context = inputs
         context = inputs if context is None else context
-        q, k, v = (
-            self.to_q(inputs)(inputs),
-            self.to_k(context)(context),
-            self.to_v(context)(context),
-        )
+        q, k, v = (self.to_q(inputs), self.to_k(context), self.to_v(context))
         q = tf.reshape(q, (-1, inputs.shape[1], self.num_heads, self.head_size))
         k = tf.reshape(k, (-1, context.shape[1], self.num_heads, self.head_size))
         v = tf.reshape(v, (-1, context.shape[1], self.num_heads, self.head_size))
@@ -265,7 +248,7 @@ class CrossAttention(keras.layers.Layer):
         attn = td_dot(weights, v)
         attn = tf.transpose(attn, (0, 2, 1, 3))  # (bs, time, num_heads, head_size)
         out = tf.reshape(attn, (-1, inputs.shape[1], self.num_heads * self.head_size))
-        return self.out_proj(out)(out)
+        return self.out_proj(out)
 
 
 class Upsample(keras.layers.Layer):
@@ -283,12 +266,10 @@ class GEGLU(keras.layers.Layer):
     def __init__(self, output_dim, **kwargs):
         super().__init__(**kwargs)
         self.output_dim = output_dim
-        self.dense = lambda x: LoraInjectedLinearWrapper(
-            keras.layers.Dense(output_dim * 2), x
-        )
+        self.dense = LoraInjectedLinearWrapper(keras.layers.Dense(output_dim * 2))
 
     def call(self, inputs):
-        x = self.dense(inputs)(inputs)
+        x = self.dense(inputs)
         x, gate = x[..., : self.output_dim], x[..., self.output_dim :]
         tanh_res = keras.activations.tanh(
             gate * 0.7978845608 * (1 + 0.044715 * (gate**2))

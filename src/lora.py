@@ -8,7 +8,6 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
     def __init__(
         self,
         original_layer,
-        input_layer,
         bias=False,
         r=16,
         dropout_p=0.1,
@@ -21,17 +20,14 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self.linear.trainable = False
         self.config = self.linear.get_config()
 
-        input_dim = input_layer.shape[-1]
         output_dim = self.config["units"]
 
-        if r > min(input_dim, output_dim):
-            raise ValueError(
-                f"LoRA rank {r} must be less or equal than {min(input_dim, output_dim)}"
-            )
+        if r > output_dim:
+            raise ValueError(f"LoRA rank {r} must be less or equal than {output_dim}")
 
         self.r = r
         self.bias = bias
-        self.lora_down = keras.layers.Dense(r, input_shape=(input_dim,), use_bias=False)
+        self.lora_down = keras.layers.Dense(r, use_bias=False)
         self.dropout = keras.layers.Dropout(dropout_p)
         self.lora_up = keras.layers.Dense(output_dim, input_shape=(r,), use_bias=False)
         self.scale = scale
