@@ -57,7 +57,6 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
     def __init__(
         self,
         original_layer,
-        input_layer,
         r: int = 4,
         dropout_p: float = 0.1,
         scale: float = 1.0,
@@ -94,10 +93,6 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         self.lora_up = PaddedConv2D(**self._lora_up_config)
         self.selector = tf.identity
         self.scale = scale
-        if "output" in dir(input_layer):
-            input_shape = input_layer.output.shape[1:]
-        else:
-            input_shape = input_layer.shape[1:]
 
     def build(self, input_shape):
         self.lora_down.build(input_shape)

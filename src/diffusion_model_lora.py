@@ -42,16 +42,16 @@ class LoRADiffusionModel(keras.Model):
         # Downsampling flow
 
         outputs = []
-        x = LoraInjectedConv2DWrapper(
-            PaddedConv2D(320, kernel_size=3, padding=1), latent
-        )(latent)
+        x = LoraInjectedConv2DWrapper(PaddedConv2D(320, kernel_size=3, padding=1))(
+            latent
+        )
         outputs.append(x)
 
         for _ in range(2):
             x = ResBlock(320)([x, t_emb])
             x = SpatialTransformer(8, 40, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(320, 3, strides=2, padding=1), x)(
+        x = LoraInjectedConv2DWrapper(PaddedConv2D(320, 3, strides=2, padding=1))(
             x
         )  # Downsample 2x
         outputs.append(x)
@@ -60,7 +60,7 @@ class LoRADiffusionModel(keras.Model):
             x = ResBlock(640)([x, t_emb])
             x = SpatialTransformer(8, 80, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(640, 3, strides=2, padding=1), x)(
+        x = LoraInjectedConv2DWrapper(PaddedConv2D(640, 3, strides=2, padding=1))(
             x
         )  # Downsample 2x
         outputs.append(x)
@@ -69,7 +69,7 @@ class LoRADiffusionModel(keras.Model):
             x = ResBlock(1280)([x, t_emb])
             x = SpatialTransformer(8, 160, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(1280, 3, strides=2, padding=1), x)(
+        x = LoraInjectedConv2DWrapper(PaddedConv2D(1280, 3, strides=2, padding=1))(
             x
         )  # Downsample 2x
         outputs.append(x)
@@ -112,9 +112,7 @@ class LoRADiffusionModel(keras.Model):
 
         x = keras.layers.GroupNormalization(epsilon=1e-5)(x)
         x = keras.layers.Activation("swish")(x)
-        output = LoraInjectedConv2DWrapper(
-            PaddedConv2D(4, kernel_size=3, padding=1), x
-        )(x)
+        output = LoraInjectedConv2DWrapper(PaddedConv2D(4, kernel_size=3, padding=1))(x)
 
         super().__init__([latent, t_embed_input, context], output, name=name)
 
@@ -133,9 +131,6 @@ class ResBlock(keras.layers.Layer):
         self.entry_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
-            lambda x: LoraInjectedConv2DWrapper(
-                PaddedConv2D(output_dim, 3, padding=1), x
-            ),
         ]
         self.embedding_flow = [
             keras.layers.Activation("swish"),
@@ -144,42 +139,32 @@ class ResBlock(keras.layers.Layer):
         self.exit_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
-            lambda x: LoraInjectedConv2DWrapper(
-                PaddedConv2D(output_dim, 3, padding=1), x
-            ),
+            LoraInjectedConv2DWrapper(PaddedConv2D(output_dim, 3, padding=1)),
         ]
 
     def build(self, input_shape):
         if input_shape[0][-1] != self.output_dim:
-            self.residual_projection = lambda x: LoraInjectedConv2DWrapper(
-                PaddedConv2D(self.output_dim, 1), x
+            self.residual_projection = LoraInjectedConv2DWrapper(
+                PaddedConv2D(self.output_dim, 1)
             )
         else:
-            self.residual_projection = None
+            self.residual_projection = lambda x: x
 
     def call(self, inputs):
         inputs, embeddings = inputs
         x = inputs
-        for i, layer in enumerate(self.entry_flow):
-            if i == len(self.entry_flow) - 1:
-                x = layer(x)(x)
-            else:
-                x = layer(x)
+        for layer in self.entry_flow:
+            x = layer(x)
+        x = PaddedConv2D(self.output_dim, 3, padding=1)(x)
         for i, layer in enumerate(self.embedding_flow):
             if i == len(self.embedding_flow) - 1:
                 embeddings = layer(embeddings)(embeddings)
             else:
                 embeddings = layer(embeddings)
         x = x + embeddings[:, None, None]
-        for i, layer in enumerate(self.exit_flow):
-            if i == len(self.exit_flow) - 1:
-                x = layer(x)(x)
-            else:
-                x = layer(x)
-        if self.residual_projection is not None:
-            return x + self.residual_projection(inputs)(inputs)
-        else:
-            return x + inputs
+        for layer in self.exit_flow:
+            x = layer(x)
+        return x + self.residual_projection(inputs)
 
 
 class SpatialTransformer(keras.layers.Layer):
@@ -187,13 +172,14 @@ class SpatialTransformer(keras.layers.Layer):
         super().__init__(**kwargs)
         self.norm = keras.layers.GroupNormalization(epsilon=1e-5)
         channels = num_heads * head_size
+        self.fully_connected = fully_connected
         if fully_connected:
             self.proj1 = lambda x: LoraInjectedLinearWrapper(
                 keras.layers.Dense(num_heads * head_size), x
             )
         else:
-            self.proj1 = lambda x: LoraInjectedConv2DWrapper(
-                PaddedConv2D(num_heads * head_size, 1), x
+            self.proj1 = LoraInjectedConv2DWrapper(
+                PaddedConv2D(num_heads * head_size, 1)
             )
         self.transformer_block = BasicTransformerBlock(channels, num_heads, head_size)
         if fully_connected:
@@ -201,19 +187,23 @@ class SpatialTransformer(keras.layers.Layer):
                 keras.layers.Dense(channels), x
             )
         else:
-            self.proj2 = lambda x: LoraInjectedConv2DWrapper(
-                PaddedConv2D(channels, 1), x
-            )
+            self.proj2 = LoraInjectedConv2DWrapper(PaddedConv2D(channels, 1))
 
     def call(self, inputs):
         inputs, context = inputs
         _, h, w, c = inputs.shape
         x = self.norm(inputs)
-        x = self.proj1(x)(x)
+        if self.fully_connected:
+            x = self.proj1(x)(x)
+        else:
+            x = self.proj1(x)
         x = tf.reshape(x, (-1, h * w, c))
         x = self.transformer_block([x, context])
         x = tf.reshape(x, (-1, h, w, c))
-        return self.proj2(x)(x) + inputs
+        if self.fully_connected:
+            return self.proj2(x)(x) + inputs
+        else:
+            return self.proj2(x) + inputs
 
 
 class BasicTransformerBlock(keras.layers.Layer):
@@ -282,13 +272,11 @@ class Upsample(keras.layers.Layer):
     def __init__(self, channels, **kwargs):
         super().__init__(**kwargs)
         self.ups = keras.layers.UpSampling2D(2)
-        self.conv = lambda x: LoraInjectedConv2DWrapper(
-            PaddedConv2D(channels, 3, padding=1), x
-        )
+        self.conv = LoraInjectedConv2DWrapper(PaddedConv2D(channels, 3, padding=1))
 
     def call(self, inputs):
         x = self.ups(inputs)
-        return self.conv(x)(x)
+        return self.conv(x)
 
 
 class GEGLU(keras.layers.Layer):
