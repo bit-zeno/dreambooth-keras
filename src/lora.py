@@ -9,7 +9,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self,
         original_layer,
         bias=False,
-        r=16,
+        r=4,
         dropout_p=0.1,
         scale=1.0,
         **kwargs,
@@ -33,9 +33,9 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self.scale = scale
         self.selector = tf.identity
 
-    def build(self, input_shape):
-        self.lora_down.build(input_shape)
-        self.lora_up.build(self.r)
+    # def build(self, input_shape):
+    #     self.lora_down.build(input_shape)
+    #     self.lora_up.build(self.r)
 
     def call(self, inputs):
         x = self.lora_down(inputs)
@@ -90,9 +90,9 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         self.selector = tf.identity
         self.scale = scale
 
-    def build(self, input_shape):
-        self.lora_down.build(input_shape)
-        self.lora_up.build((self.r, 1, 1))
+    # def build(self, input_shape):
+    #     self.lora_down.build(input_shape)
+    #     self.lora_up.build((self.r, 1, 1))
 
     def call(self, inputs):
         x = self.lora_down(inputs)
