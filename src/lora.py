@@ -27,9 +27,16 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
 
         self.r = r
         self.bias = bias
-        self.lora_down = keras.layers.Dense(r, use_bias=False)
+        self.lora_down = keras.layers.Dense(
+            r, use_bias=False, kernel_initializer=tf.keras.initializers.Zeros()
+        )
         self.dropout = keras.layers.Dropout(dropout_p)
-        self.lora_up = keras.layers.Dense(output_dim, input_shape=(r,), use_bias=False)
+        self.lora_up = keras.layers.Dense(
+            output_dim,
+            input_shape=(r,),
+            use_bias=False,
+            kernel_initializer=tf.keras.initializers.Zeros(),
+        )
         self.scale = scale
         self.selector = tf.identity
 
@@ -75,6 +82,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
             "filters": r,
             "use_bias": False,
             "trainable": True,
+            "kernel_initializer": tf.keras.initializers.Zeros(),
         }
         self._lora_up_config = {
             **self.config,
@@ -83,6 +91,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
             "padding": 0,
             "use_bias": False,
             "trainable": True,
+            "kernel_initializer": tf.keras.initializers.Zeros(),
         }
         self.lora_down = PaddedConv2D(**self._lora_down_config)
         self.dropout = keras.layers.Dropout(dropout_p)
