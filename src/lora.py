@@ -11,7 +11,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         bias=False,
         r=4,
         dropout_p=0.1,
-        scale=1.0,
+        lora_alpha=1.0,
         **kwargs,
     ):
         super().__init__(name=f"{original_layer.name}_lora", **kwargs)
@@ -30,15 +30,18 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self.lora_down = keras.layers.Dense(
             r, use_bias=False, kernel_initializer=tf.keras.initializers.Zeros()
         )
-        self.dropout = keras.layers.Dropout(dropout_p)
+        if dropout_p > 0:
+            self.dropout = keras.layers.Dropout(dropout_p)
+        else:
+            self.dropout = lambda x: x
         self.lora_up = keras.layers.Dense(
             output_dim,
             input_shape=(r,),
             use_bias=False,
             kernel_initializer=tf.keras.initializers.Zeros(),
         )
-        self.scale = scale
-        self.selector = tf.identity
+        self.scale = lora_alpha / r
+        # self.selector = tf.identity
 
     # def build(self, input_shape):
     #     self.lora_down.build(input_shape)
@@ -46,7 +49,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
 
     def call(self, inputs):
         x = self.lora_down(inputs)
-        x = self.selector(x)
+        # x = self.selector(x)
         x = self.lora_up(x)
         x = self.dropout(x)
         x = self.linear(inputs) + x * self.scale
@@ -62,7 +65,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         original_layer,
         r: int = 4,
         dropout_p: float = 0.1,
-        scale: float = 1.0,
+        lora_alpha: float = 1.0,
         **kwargs,
     ):
         super().__init__(name=f"{original_layer.name}_lora", **kwargs)
@@ -94,10 +97,13 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
             "kernel_initializer": tf.keras.initializers.Zeros(),
         }
         self.lora_down = PaddedConv2D(**self._lora_down_config)
-        self.dropout = keras.layers.Dropout(dropout_p)
+        if dropout_p > 0:
+            self.dropout = keras.layers.Dropout(dropout_p)
+        else:
+            self.dropout = lambda x: x
         self.lora_up = PaddedConv2D(**self._lora_up_config)
-        self.selector = tf.identity
-        self.scale = scale
+        # self.selector = tf.identity
+        self.scale = lora_alpha / r
 
     # def build(self, input_shape):
     #     self.lora_down.build(input_shape)
@@ -105,7 +111,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
 
     def call(self, inputs):
         x = self.lora_down(inputs)
-        x = self.selector(x)
+        # x = self.selector(x)
         x = self.lora_up(x)
         x = self.dropout(x)
         x = self.conv(inputs) + x * self.scale
