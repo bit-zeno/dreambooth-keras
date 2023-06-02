@@ -164,8 +164,12 @@ class LoRADiffusionModel(keras.Model):
             else:
                 raise "Error importing weights"
 
-    def trainable_variables(self):
-        return [self.layers[i].trainable_variables for i in range(len(self.layers))]
+    def get_trainable_variables(self):
+        trainable_vars = []
+        for i in range(len(self.layers)):
+            t_variables = self.layers[i].trainable_variables
+            trainable_vars += t_variables
+        return trainable_vars
 
 
 class ResBlock(keras.layers.Layer):
