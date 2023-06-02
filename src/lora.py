@@ -10,7 +10,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         original_layer,
         bias=False,
         r=4,
-        dropout_p=0.1,
+        dropout_p=0.0,
         lora_alpha=1.0,
         **kwargs,
     ):
@@ -28,7 +28,7 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
         self.r = r
         self.bias = bias
         self.lora_down = keras.layers.Dense(
-            r, use_bias=False, kernel_initializer=tf.keras.initializers.Zeros()
+            r, use_bias=False, kernel_initializer=tf.keras.initializers.HeUniform()
         )
         if dropout_p > 0:
             self.dropout = keras.layers.Dropout(dropout_p)
@@ -64,7 +64,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
         self,
         original_layer,
         r: int = 4,
-        dropout_p: float = 0.1,
+        dropout_p: float = 0.0,
         lora_alpha: float = 1.0,
         **kwargs,
     ):
@@ -85,7 +85,7 @@ class LoraInjectedConv2DWrapper(keras.layers.Layer):
             "filters": r,
             "use_bias": False,
             "trainable": True,
-            "kernel_initializer": tf.keras.initializers.Zeros(),
+            "kernel_initializer": tf.keras.initializers.HeUniform(),
         }
         self._lora_up_config = {
             **self.config,

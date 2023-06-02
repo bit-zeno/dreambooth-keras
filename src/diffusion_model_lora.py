@@ -179,7 +179,7 @@ class ResBlock(keras.layers.Layer):
         self.entry_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
-            LoraInjectedConv2DWrapper(PaddedConv2D(self.output_dim, 3, padding=1)),
+            LoraInjectedConv2DWrapper(PaddedConv2D(output_dim, 3, padding=1)),
         ]
         self.embedding_flow = [
             keras.layers.Activation("swish"),
@@ -217,7 +217,6 @@ class SpatialTransformer(keras.layers.Layer):
         super().__init__(**kwargs)
         self.norm = keras.layers.GroupNormalization(epsilon=1e-5)
         channels = num_heads * head_size
-        self.fully_connected = fully_connected
         if fully_connected:
             self.proj1 = LoraInjectedLinearWrapper(
                 keras.layers.Dense(num_heads * head_size)
@@ -258,8 +257,7 @@ class BasicTransformerBlock(keras.layers.Layer):
         inputs, context = inputs
         x = self.attn1([self.norm1(inputs), None]) + inputs
         x = self.attn2([self.norm2(x), context]) + x
-        _tmp = self.geglu(self.norm3(x))
-        return self.dense(_tmp) + x
+        return self.dense(self.geglu(self.norm3(x))) + x
 
 
 class CrossAttention(keras.layers.Layer):
@@ -284,7 +282,7 @@ class CrossAttention(keras.layers.Layer):
     def call(self, inputs):
         inputs, context = inputs
         context = inputs if context is None else context
-        q, k, v = (self.to_q(inputs), self.to_k(context), self.to_v(context))
+        q, k, v = self.to_q(inputs), self.to_k(context), self.to_v(context)
         q = tf.reshape(q, (-1, inputs.shape[1], self.num_heads, self.head_size))
         k = tf.reshape(k, (-1, context.shape[1], self.num_heads, self.head_size))
         v = tf.reshape(v, (-1, context.shape[1], self.num_heads, self.head_size))
