@@ -18,6 +18,7 @@ from tensorflow import keras
 
 from layers import PaddedConv2D
 from lora import LoraInjectedLinearWrapper
+from diffusion_model import DiffusionModel
 
 
 class LoRADiffusionModel(keras.Model):
@@ -106,15 +107,30 @@ class LoRADiffusionModel(keras.Model):
 
         super().__init__([latent, t_embed_input, context], output, name=name)
 
+        self.prepare_training_layers()
+        self._trainable_variables = self.get_trainable_variables()
+
         if download_weights:
-            diffusion_model_weights_fpath = keras.utils.get_file(
-                origin="https://huggingface.co/fchollet/stable-diffusion/resolve/main/kcv_diffusion_model.h5",  # noqa: E501
-                file_hash="8799ff9763de13d7f30a683d653018e114ed24a6a819667da4f5ee10f9e805fe",  # noqa: E501
-            )
-            self.load_weights(diffusion_model_weights_fpath)
+            cpus = tf.config.list_logical_devices("CPU")
+
+            with tf.device(cpus[0]):
+                _diffusion_model = DiffusionModel(
+                    img_height,
+                    img_width,
+                    max_text_length,
+                    download_weights=True,
+                )
+                self.import_weights(_diffusion_model)
+
+            del _diffusion_model
+
+    def prepare_training_layers(self):
+        for i in range(len(self.layers)):
+            if self.layers[i].name.find("spatial_transformer") == -1:
+                self.layers[i].trainable = False
 
     def import_weights(self, diffusion_model):
-        for i in range(0, 66):
+        for i in range(len(self.layers)):
             lora_l = self.layers[i]
             ori_l = diffusion_model.layers[i]
             lora_w = lora_l.get_weights()
@@ -123,7 +139,6 @@ class LoRADiffusionModel(keras.Model):
                 lora_w[16:] = ori_w
                 self.layers[i].set_weights(lora_w)
             else:
-                self.layers[i].trainable = False
                 self.layers[i].set_weights(ori_w)
 
     def get_trainable_variables(self):
