@@ -40,6 +40,8 @@ class LoraInjectedLinearWrapper(keras.layers.Layer):
             use_bias=False,
             kernel_initializer=tf.keras.initializers.Zeros(),
         )
+        self.lora_down.trainable = True
+        self.lora_up.trainable = True
         self.scale = lora_alpha / r
         # self.selector = tf.identity
 

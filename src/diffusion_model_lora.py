@@ -17,7 +17,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 from layers import PaddedConv2D
-from lora import LoraInjectedLinearWrapper, LoraInjectedConv2DWrapper
+from lora import LoraInjectedLinearWrapper
 
 
 class LoRADiffusionModel(keras.Model):
@@ -33,43 +33,35 @@ class LoRADiffusionModel(keras.Model):
         t_embed_input = keras.layers.Input((320,))
         latent = keras.layers.Input((img_height // 8, img_width // 8, 4))
 
-        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280))(t_embed_input)
+        t_emb = keras.layers.Dense(1280)(t_embed_input)
         t_emb = keras.layers.Activation("swish")(t_emb)
-        t_emb = LoraInjectedLinearWrapper(keras.layers.Dense(1280))(t_emb)
+        t_emb = keras.layers.Dense(1280)(t_emb)
 
         # Downsampling flow
 
         outputs = []
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(320, kernel_size=3, padding=1))(
-            latent
-        )
+        x = PaddedConv2D(320, kernel_size=3, padding=1)(latent)
         outputs.append(x)
 
         for _ in range(2):
             x = ResBlock(320)([x, t_emb])
             x = SpatialTransformer(8, 40, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(320, 3, strides=2, padding=1))(
-            x
-        )  # Downsample 2x
+        x = PaddedConv2D(320, 3, strides=2, padding=1)(x)  # Downsample 2x
         outputs.append(x)
 
         for _ in range(2):
             x = ResBlock(640)([x, t_emb])
             x = SpatialTransformer(8, 80, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(640, 3, strides=2, padding=1))(
-            x
-        )  # Downsample 2x
+        x = PaddedConv2D(640, 3, strides=2, padding=1)(x)  # Downsample 2x
         outputs.append(x)
 
         for _ in range(2):
             x = ResBlock(1280)([x, t_emb])
             x = SpatialTransformer(8, 160, fully_connected=False)([x, context])
             outputs.append(x)
-        x = LoraInjectedConv2DWrapper(PaddedConv2D(1280, 3, strides=2, padding=1))(
-            x
-        )  # Downsample 2x
+        x = PaddedConv2D(1280, 3, strides=2, padding=1)(x)  # Downsample 2x
         outputs.append(x)
 
         for _ in range(2):
@@ -110,7 +102,7 @@ class LoRADiffusionModel(keras.Model):
 
         x = keras.layers.GroupNormalization(epsilon=1e-5)(x)
         x = keras.layers.Activation("swish")(x)
-        output = LoraInjectedConv2DWrapper(PaddedConv2D(4, kernel_size=3, padding=1))(x)
+        output = PaddedConv2D(4, kernel_size=3, padding=1)(x)
 
         super().__init__([latent, t_embed_input, context], output, name=name)
 
@@ -127,42 +119,12 @@ class LoRADiffusionModel(keras.Model):
             ori_l = diffusion_model.layers[i]
             lora_w = lora_l.get_weights()
             ori_w = ori_l.get_weights()
-            if (
-                lora_l.name.find("res_block") == -1
-                and lora_l.name.find("spatial_transformer") == -1
-            ):
-                lora_w[-len(ori_w) :] = ori_w
-                self.layers[i].set_weights(lora_w)
-
-            elif lora_l.name.find("res_block") != -1:
-                if len(lora_w) == 16:
-                    lora_w[0:2] = ori_w[0:2]
-                    lora_w[6:8] = ori_w[6:8]
-                    lora_w[10:12] = ori_w[2:4]
-                    lora_w[12:14] = ori_w[4:6]
-                    lora_w[14:16] = ori_w[8:10]
-                elif len(lora_w) == 20:
-                    lora_w[0:2] = ori_w[0:2]
-                    lora_w[6:8] = ori_w[6:8]
-                    lora_w[12:14] = ori_w[2:4]
-                    lora_w[14:16] = ori_w[4:6]
-                    lora_w[16:20] = ori_w[8:12]
-                else:
-                    raise "Error importing weights"
-                self.layers[i].set_weights(lora_w)
-
-            elif lora_l.name.find("spatial_transformer") != -1:
-                lora_w[0:2] = ori_w[0:2]
-                lora_w[4:6] = ori_w[4:6]
-                lora_w[14:16] = ori_w[11:13]
-                lora_w[24:26] = ori_w[18:20]
-                lora_w[32:34] = ori_w[2:4]
-                lora_w[34:39] = ori_w[6:11]
-                lora_w[39:44] = ori_w[13:18]
-                lora_w[44:50] = ori_w[20:26]
+            if lora_l.name.find("spatial_transformer") != -1:
+                lora_w[16:] = ori_w
                 self.layers[i].set_weights(lora_w)
             else:
-                raise "Error importing weights"
+                self.layers[i].trainable = False
+                self.layers[i].set_weights(ori_w)
 
     def get_trainable_variables(self):
         trainable_vars = []
@@ -179,23 +141,22 @@ class ResBlock(keras.layers.Layer):
         self.entry_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
-            LoraInjectedConv2DWrapper(PaddedConv2D(output_dim, 3, padding=1)),
+            PaddedConv2D(output_dim, 3, padding=1),
         ]
         self.embedding_flow = [
             keras.layers.Activation("swish"),
-            LoraInjectedLinearWrapper(keras.layers.Dense(output_dim)),
+            keras.layers.Dense(output_dim),
         ]
         self.exit_flow = [
             keras.layers.GroupNormalization(epsilon=1e-5),
             keras.layers.Activation("swish"),
-            LoraInjectedConv2DWrapper(PaddedConv2D(output_dim, 3, padding=1)),
+            PaddedConv2D(output_dim, 3, padding=1),
         ]
 
     def build(self, input_shape):
         if input_shape[0][-1] != self.output_dim:
-            self.residual_projection = LoraInjectedConv2DWrapper(
-                PaddedConv2D(self.output_dim, 1)
-            )
+            self.residual_projection = PaddedConv2D(self.output_dim, 1)
+
         else:
             self.residual_projection = lambda x: x
 
@@ -216,20 +177,19 @@ class SpatialTransformer(keras.layers.Layer):
     def __init__(self, num_heads, head_size, fully_connected=False, **kwargs):
         super().__init__(**kwargs)
         self.norm = keras.layers.GroupNormalization(epsilon=1e-5)
+        self.norm.trainable = False
         channels = num_heads * head_size
         if fully_connected:
-            self.proj1 = LoraInjectedLinearWrapper(
-                keras.layers.Dense(num_heads * head_size)
-            )
+            self.proj1 = keras.layers.Dense(num_heads * head_size)
         else:
-            self.proj1 = LoraInjectedConv2DWrapper(
-                PaddedConv2D(num_heads * head_size, 1)
-            )
+            self.proj1 = PaddedConv2D(num_heads * head_size, 1)
+        self.proj1.trainable = False
         self.transformer_block = BasicTransformerBlock(channels, num_heads, head_size)
         if fully_connected:
-            self.proj2 = LoraInjectedLinearWrapper(keras.layers.Dense(channels))
+            self.proj2 = keras.layers.Dense(channels)
         else:
-            self.proj2 = LoraInjectedConv2DWrapper(PaddedConv2D(channels, 1))
+            self.proj2 = PaddedConv2D(channels, 1)
+        self.proj2.trainable = False
 
     def call(self, inputs):
         inputs, context = inputs
@@ -251,7 +211,12 @@ class BasicTransformerBlock(keras.layers.Layer):
         self.attn2 = CrossAttention(num_heads, head_size)
         self.norm3 = keras.layers.LayerNormalization(epsilon=1e-5)
         self.geglu = GEGLU(dim * 4)
-        self.dense = LoraInjectedLinearWrapper(keras.layers.Dense(dim))
+        self.dense = keras.layers.Dense(dim)
+
+        self.norm1.trainable = False
+        self.norm2.trainable = False
+        self.norm3.trainable = False
+        self.dense.trainable = False
 
     def call(self, inputs):
         inputs, context = inputs
@@ -303,7 +268,7 @@ class Upsample(keras.layers.Layer):
     def __init__(self, channels, **kwargs):
         super().__init__(**kwargs)
         self.ups = keras.layers.UpSampling2D(2)
-        self.conv = LoraInjectedConv2DWrapper(PaddedConv2D(channels, 3, padding=1))
+        self.conv = PaddedConv2D(channels, 3, padding=1)
 
     def call(self, inputs):
         x = self.ups(inputs)
@@ -314,7 +279,8 @@ class GEGLU(keras.layers.Layer):
     def __init__(self, output_dim, **kwargs):
         super().__init__(**kwargs)
         self.output_dim = output_dim
-        self.dense = LoraInjectedLinearWrapper(keras.layers.Dense(output_dim * 2))
+        self.dense = keras.layers.Dense(output_dim * 2)
+        self.dense.trainable = False
 
     def call(self, inputs):
         x = self.dense(inputs)
