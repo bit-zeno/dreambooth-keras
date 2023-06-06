@@ -1,7 +1,8 @@
 import tensorflow as tf
 from tensorflow import keras
-
-from layers import PaddedConv2D
+from keras_cv.models.stable_diffusion.__internal__.layers.padded_conv2d import (
+    PaddedConv2D,
+)
 
 
 class LoraInjectedLinearWrapper(keras.layers.Layer):

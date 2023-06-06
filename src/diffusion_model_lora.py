@@ -15,10 +15,12 @@
 
 import tensorflow as tf
 from tensorflow import keras
+from keras_cv.models.stable_diffusion import DiffusionModel
+from keras_cv.models.stable_diffusion.__internal__.layers.padded_conv2d import (
+    PaddedConv2D,
+)
 
-from layers import PaddedConv2D
-from lora import LoraInjectedLinearWrapper
-from diffusion_model import DiffusionModel
+from src.lora import LoraInjectedLinearWrapper
 
 
 class LoRADiffusionModel(keras.Model):
